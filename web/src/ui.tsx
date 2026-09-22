@@ -1,27 +1,5 @@
 import type { ReactNode } from "react"
 
-export function Logo({ onClick }: { onClick?: () => void }) {
-  return (
-    <a
-      href="/"
-      onClick={(e) => {
-        if (!onClick) return
-        e.preventDefault()
-        onClick()
-      }}
-      className="inline-flex items-center gap-2.5 text-[15px] font-medium tracking-tight text-ink"
-    >
-      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden>
-        <rect width="32" height="32" rx="9" fill="#1f1f1f" />
-        <path d="M16 7.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L16 20.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill="none" stroke="#ededed" strokeWidth="1.8" strokeLinejoin="round" />
-      </svg>
-      <span>
-        Stargaze<span className="text-mute">.search</span>
-      </span>
-    </a>
-  )
-}
-
 export function Tile({ children, className = "", inner = "" }: { children: ReactNode; className?: string; inner?: string }) {
   return (
     <div className={`tile ${className}`}>

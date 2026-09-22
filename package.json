@@ -15,7 +15,6 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",
     "border-beam": "^1.4.1",
-    "loading-dev": "^0.3.4",
     "minisearch": "^7.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

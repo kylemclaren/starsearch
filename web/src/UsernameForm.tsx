@@ -11,6 +11,9 @@ export function UsernameForm({ autoFocus }: { autoFocus?: boolean }) {
   const valid = LOGIN_RE.test(login)
   return (
     <form
+      role="search"
+      autoComplete="off"
+      data-1p-ignore
       className="w-full max-w-[520px]"
       onSubmit={(e) => {
         e.preventDefault()
@@ -30,7 +33,14 @@ export function UsernameForm({ autoFocus }: { autoFocus?: boolean }) {
             autoCorrect="off"
             spellCheck={false}
             placeholder="username"
+            type="search"
+            name="gh-user-lookup"
             aria-label="GitHub username"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
+            data-form-type="other"
             className="min-w-0 flex-1 bg-transparent font-mono text-[15px] text-ink outline-none placeholder:text-mute/70"
           />
           <button

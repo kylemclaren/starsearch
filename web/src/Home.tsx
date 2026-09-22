@@ -1,19 +1,8 @@
 import { useEffect, useState } from "react"
-import { Atom, BouncingDots, Blocks, Orbit, Radar, Swirl } from "loading-dev"
 import { listRecent, type IndexMeta } from "./api"
 import { navigate } from "./router"
 import { UsernameForm } from "./UsernameForm"
-import { Avatar, Logo, Tile, ago, compact, langColor } from "./ui"
-
-// Floating spinner tiles, after libraries.dev's hero.
-const FLOATERS = [
-  { C: Orbit, style: { left: "4%", top: "8%" }, delay: "0s" },
-  { C: BouncingDots, style: { left: "13%", top: "40%" }, delay: "-5s" },
-  { C: Blocks, style: { left: "5%", top: "72%" }, delay: "-4s" },
-  { C: Radar, style: { right: "5%", top: "6%" }, delay: "-2s" },
-  { C: Swirl, style: { right: "13%", top: "38%" }, delay: "-3s" },
-  { C: Atom, style: { right: "4%", top: "70%" }, delay: "-1s" },
-]
+import { Avatar, Tile, ago, compact, langColor } from "./ui"
 
 export function Home() {
   const [recent, setRecent] = useState<IndexMeta[]>()
@@ -24,24 +13,7 @@ export function Home() {
 
   return (
     <div className="min-h-dvh">
-      <header className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-4 sm:px-6">
-        <Logo />
-        <a href="https://docs.typesafe.ai" target="_blank" rel="noreferrer" className="pill">
-          Ranked by <span className="text-ink">Jev</span>
-        </a>
-      </header>
-
-      <section className="relative mx-auto flex max-w-[1280px] flex-col items-center px-4 pb-24 pt-20 text-center sm:pt-28">
-        <div className="pointer-events-none absolute inset-0 hidden xl:block" aria-hidden>
-          {FLOATERS.map(({ C, style, delay }, i) => (
-            <div key={i} className="float-tile absolute" style={{ ...style, animationDelay: delay }}>
-              <Tile inner="grid size-[88px] place-items-center text-dim">
-                <C size={22} color="currentColor" />
-              </Tile>
-            </div>
-          ))}
-        </div>
-
+      <section className="relative mx-auto flex max-w-[1280px] flex-col items-center px-4 pb-24 pt-24 text-center sm:pt-36">
         {total > 0 && (
           <span className="pill fade-in mb-6">
             <span className="tabular-nums text-ink">{total.toLocaleString()}</span> stars indexed

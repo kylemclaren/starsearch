@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react"
 import { BorderBeam } from "border-beam"
-import { Arc, LinearDots } from "loading-dev"
 import { getMeta, search, type Hit, type IndexMeta } from "./api"
 import { Indexer } from "./Indexer"
 import { Results } from "./Results"
 import { navigate } from "./router"
-import { Avatar, Logo, Tile, ago } from "./ui"
+import { Avatar, Tile, ago } from "./ui"
 
 const SUGGESTIONS = [
   "a terminal UI framework",
@@ -49,7 +48,16 @@ export function UserPage({ login }: { login: string }) {
   return (
     <div className="min-h-dvh">
       <header className="mx-auto flex h-16 max-w-[1000px] items-center justify-between gap-4 px-4 sm:px-6">
-        <Logo onClick={() => navigate("/")} />
+        <a
+          href="/"
+          onClick={(e) => {
+            e.preventDefault()
+            navigate("/")
+          }}
+          className="text-[13px] text-mute transition hover:text-ink"
+        >
+          ← Search another user
+        </a>
         {meta && !reindex && (
           <div className="flex min-w-0 items-center gap-2.5">
             <Avatar owner={login} size={26} className="rounded-full" />
@@ -64,9 +72,7 @@ export function UserPage({ login }: { login: string }) {
         {loadError ? (
           <p className="text-center text-dim">{loadError}</p>
         ) : meta === undefined ? (
-          <div className="grid place-items-center py-24 text-mute">
-            <Arc size={20} color="currentColor" />
-          </div>
+          <div className="py-24" />
         ) : meta === null || reindex ? (
           <Indexer
             login={login}
@@ -158,6 +164,9 @@ function Search({ login, meta, onReindex }: { login: string; meta: IndexMeta; on
       </div>
 
       <form
+        role="search"
+        autoComplete="off"
+        data-1p-ignore
         onSubmit={(e) => {
           e.preventDefault()
           run(input)
@@ -177,17 +186,18 @@ function Search({ login, meta, onReindex }: { login: string; meta: IndexMeta; on
               enterKeyHint="search"
               placeholder="Describe the repo you’re thinking of…"
               aria-label="Search stars"
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
+              data-form-type="other"
               className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-mute"
             />
             <span className="hidden shrink-0 items-center gap-2 text-[12px] text-mute sm:flex">
               {state.phase === "retrieving" ? (
-                <>
-                  <LinearDots size={14} color="currentColor" /> retrieving
-                </>
+<>retrieving…</>
               ) : state.phase === "judging" ? (
-                <>
-                  <Arc size={13} color="var(--color-accent)" /> Jev is judging {state.hits.length}
-                </>
+<>Jev is judging {state.hits.length}…</>
               ) : (
                 <kbd className="rounded-md px-1.5 font-mono ring-1 ring-line">/</kbd>
               )}
@@ -243,9 +253,7 @@ function Search({ login, meta, onReindex }: { login: string; meta: IndexMeta; on
             </div>
           </div>
         ) : state.hits.length === 0 && state.phase !== "done" ? (
-          <div className="grid place-items-center py-16 text-mute">
-            <LinearDots size={20} color="currentColor" />
-          </div>
+          <div className="py-16" />
         ) : (
           <Tile inner="overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3 text-[12px] text-mute">

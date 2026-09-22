@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react"
-import { Arc } from "loading-dev"
 import { uploadStars, type IndexMeta } from "./api"
 import { fetchStars, GitHubError, type FetchProgress } from "./github"
 import { Check, Tile } from "./ui"
@@ -72,7 +71,7 @@ export function Indexer({ login, onReady, reindex }: { login: string; onReady: (
                     state === "done" ? "bg-good/15 text-good" : state === "error" ? "bg-red-500/15 text-red-400" : state === "active" ? "bg-accent-soft text-accent" : "bg-white/5 text-mute"
                   }`}
                 >
-                  {state === "done" ? <Check /> : state === "active" ? <Arc size={13} color="currentColor" /> : state === "error" ? "!" : <span className="size-1.5 rounded-full bg-current" />}
+                  {state === "done" ? <Check /> : state === "active" ? <span className="size-2 animate-pulse rounded-full bg-current" /> : state === "error" ? "!" : <span className="size-1.5 rounded-full bg-current" />}
                 </span>
                 <div className="min-w-0">
                   <div className={`text-[14px] ${state === "todo" ? "text-mute" : "text-ink"}`}>{s.label}</div>
