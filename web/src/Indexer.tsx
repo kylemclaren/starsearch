@@ -1,101 +1,143 @@
 import { useEffect, useRef, useState } from "react"
 import { uploadStars, type IndexMeta } from "./api"
 import { fetchStars, GitHubError, type FetchProgress } from "./github"
-import { Check, Tile } from "./ui"
+import { TaskRows, type TaskRow, type TaskStatus } from "./TaskRows"
+import { Tile } from "./ui"
 
 type Step = "fetch" | "verify" | "embed"
-const STEPS: { key: Step; label: string }[] = [
-  { key: "fetch", label: "Fetch stars from GitHub" },
-  { key: "verify", label: "Check them against GitHub" },
-  { key: "embed", label: "Embed every repo" },
-]
+const ORDER: Step[] = ["fetch", "verify", "embed"]
+type Timing = Partial<Record<Step, { start: number; end?: number }>>
+
+function secs(t: { start: number; end?: number } | undefined, now: number) {
+  return t ? `${(((t.end ?? now) - t.start) / 1000).toFixed(1)}s` : "—"
+}
 
 export function Indexer({ login, onReady, reindex }: { login: string; onReady: (m: IndexMeta) => void; reindex?: boolean }) {
-  const [step, setStep] = useState<Step>("fetch")
+  const [step, setStep] = useState<Step | "ready">("fetch")
+  const [timing, setTiming] = useState<Timing>({})
   const [fetchP, setFetchP] = useState<FetchProgress>()
   const [embedP, setEmbedP] = useState<{ done: number; total: number }>()
-  const [error, setError] = useState<{ message: string; resetAt?: Date }>()
+  const [verified, setVerified] = useState<boolean>()
+  const [error, setError] = useState<{ step: Step; message: string; resetAt?: Date }>()
   const [attempt, setAttempt] = useState(0)
+  const [now, setNow] = useState(() => performance.now())
   const ready = useRef(onReady)
   ready.current = onReady
 
+  // Keep the elapsed-time readouts moving while work is in flight.
+  useEffect(() => {
+    if (step === "ready" || error) return
+    const t = setInterval(() => setNow(performance.now()), 200)
+    return () => clearInterval(t)
+  }, [step, error])
+
   useEffect(() => {
     const ac = new AbortController()
+    let current: Step = "fetch"
+    const begin = (s: Step) => {
+      const t = performance.now()
+      setTiming((prev) => ({ ...prev, ...(current !== s && prev[current] ? { [current]: { ...prev[current]!, end: t } } : {}), [s]: { start: t } }))
+      current = s
+      setStep(s)
+    }
     setError(undefined)
-    setStep("fetch")
     setFetchP(undefined)
     setEmbedP(undefined)
+    setVerified(undefined)
+    setTiming({})
+    begin("fetch")
     ;(async () => {
       try {
         const stars = await fetchStars(login, setFetchP, ac.signal)
         if (stars.length === 0) throw new Error(`${login} hasn't starred any public repositories yet.`)
-        setStep("verify")
+        begin("verify")
         for await (const e of uploadStars(login, stars, ac.signal)) {
-          if (e.type === "embed") {
-            setStep("embed")
-            setEmbedP(e)
-          } else if (e.type === "verified") setStep("embed")
-          else if (e.type === "ready") return ready.current(e.meta)
-          else if (e.type === "error") throw new Error(e.message)
+          if (e.type === "verified") {
+            setVerified(e.verified)
+            begin("embed")
+          } else if (e.type === "embed") setEmbedP(e)
+          else if (e.type === "ready") {
+            const t = performance.now()
+            setTiming((prev) => ({ ...prev, embed: prev.embed && { ...prev.embed, end: t } }))
+            setStep("ready")
+            // Let the last check land before swapping in the search view.
+            setTimeout(() => !ac.signal.aborted && ready.current(e.meta), 900)
+            return
+          } else if (e.type === "error") throw new Error(e.message)
         }
       } catch (err) {
         if (ac.signal.aborted) return
-        setError({ message: (err as Error).message, resetAt: err instanceof GitHubError ? err.resetAt : undefined })
+        const t = performance.now()
+        setTiming((prev) => ({ ...prev, [current]: prev[current] && { ...prev[current]!, end: t } }))
+        setError({ step: current, message: (err as Error).message, resetAt: err instanceof GitHubError ? err.resetAt : undefined })
       }
     })()
     return () => ac.abort()
   }, [login, attempt])
 
-  const order = STEPS.findIndex((s) => s.key === step)
-  const detail: Record<Step, string | undefined> = {
-    fetch: fetchP && `${fetchP.count.toLocaleString()} stars · page ${fetchP.page} of ${fetchP.pages}${fetchP.remaining !== undefined ? ` · ${fetchP.remaining} GitHub requests left this hour` : ""}`,
-    verify: undefined,
-    embed: embedP && `${embedP.done.toLocaleString()} of ${embedP.total.toLocaleString()}`,
+  const statusOf = (s: Step): TaskStatus => {
+    if (error?.step === s) return "failed"
+    if (step === "ready") return "done"
+    const i = ORDER.indexOf(s)
+    const cur = ORDER.indexOf(step)
+    return i < cur ? "done" : i === cur && !error ? "running" : "pending"
   }
-  const pct =
-    step === "fetch" ? (fetchP ? fetchP.page / fetchP.pages : 0) * 0.35 : step === "verify" ? 0.38 : 0.4 + (embedP ? (embedP.done / embedP.total) * 0.6 : 0)
+
+  const rows: TaskRow[] = [
+    {
+      key: "fetch",
+      step: 1,
+      label: "Fetch stars from GitHub",
+      status: statusOf("fetch"),
+      amount: fetchP ? `${fetchP.count.toLocaleString()} stars` : undefined,
+      progress: fetchP ? fetchP.page / fetchP.pages : undefined,
+      details: [
+        { label: "Pages (100 stars each)", meta: fetchP ? `${fetchP.page}/${fetchP.pages}` : "—" },
+        { label: "GitHub requests left this hour", meta: fetchP?.remaining !== undefined ? String(fetchP.remaining) : "—" },
+        { label: "Took", meta: secs(timing.fetch, now) },
+      ],
+    },
+    {
+      key: "verify",
+      step: 2,
+      label: "Check them against GitHub",
+      status: statusOf("verify"),
+      amount: statusOf("verify") === "pending" ? undefined : "1 request",
+      details: [
+        { label: "Re-fetch newest stars on the server", meta: verified === undefined ? (statusOf("verify") === "running" ? "checking" : "—") : verified ? "match" : "rate-limited" },
+        { label: "Took", meta: secs(timing.verify, now) },
+      ],
+    },
+    {
+      key: "embed",
+      step: 3,
+      label: "Embed every repo",
+      status: statusOf("embed"),
+      amount: embedP ? `${embedP.done.toLocaleString()} / ${embedP.total.toLocaleString()}` : undefined,
+      progress: embedP ? embedP.done / embedP.total : statusOf("embed") === "running" ? 0 : undefined,
+      details: [
+        { label: "Model", meta: "bge-small-en-v1.5" },
+        { label: "Progress", meta: embedP ? `${Math.round((embedP.done / embedP.total) * 100)}%` : "—" },
+        { label: "Took", meta: secs(timing.embed, now) },
+      ],
+    },
+  ]
 
   return (
-    <div className="mx-auto w-full max-w-[520px] fade-in">
-      <Tile inner="p-6 sm:p-7">
-        <div className="text-[15px] font-medium">{reindex ? "Re-indexing" : "Indexing"} {login}’s stars</div>
-        <p className="mt-1 text-[13.5px] text-mute">Happens once. After this, searches are instant for everyone.</p>
-
-        <ol className="mt-6 space-y-4">
-          {STEPS.map((s, i) => {
-            const state = error && i === order ? "error" : i < order ? "done" : i === order ? "active" : "todo"
-            return (
-              <li key={s.key} className="flex gap-3">
-                <span
-                  className={`mt-px grid size-6 shrink-0 place-items-center rounded-full ${
-                    state === "done" ? "bg-good/15 text-good" : state === "error" ? "bg-red-500/15 text-red-400" : state === "active" ? "bg-accent-soft text-accent" : "bg-white/5 text-mute"
-                  }`}
-                >
-                  {state === "done" ? <Check /> : state === "active" ? <span className="size-2 animate-pulse rounded-full bg-current" /> : state === "error" ? "!" : <span className="size-1.5 rounded-full bg-current" />}
-                </span>
-                <div className="min-w-0">
-                  <div className={`text-[14px] ${state === "todo" ? "text-mute" : "text-ink"}`}>{s.label}</div>
-                  {state !== "todo" && detail[s.key] && <div className="mt-0.5 font-mono text-[12px] text-mute tabular-nums">{detail[s.key]}</div>}
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-
-        <div className="mt-6 h-1 overflow-hidden rounded-full bg-white/6">
-          <div className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out" style={{ width: `${Math.round(pct * 100)}%` }} />
+    <div className="mx-auto w-full max-w-[480px] fade-in">
+      <Tile inner="p-5 sm:p-6">
+        <div className="mb-5 px-1">
+          <div className="text-[15px] font-medium">
+            {reindex ? "Re-indexing" : "Indexing"} {login}’s stars
+          </div>
+          <p className="mt-1 text-[13px] text-mute">Happens once. After this, searches are instant for everyone.</p>
         </div>
-
+        <TaskRows rows={rows} onRetry={() => setAttempt((a) => a + 1)} />
         {error && (
-          <div className="mt-5 rounded-[14px] bg-red-500/8 p-4 text-[13.5px] leading-relaxed text-red-200 ring-1 ring-red-500/20">
+          <p className="mt-4 px-1 text-[13px] leading-relaxed text-bad/90" style={{ animation: "fade-in 200ms ease-out both" }}>
             {error.message}
             {error.resetAt && <> It resets at {error.resetAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.</>}
-            <div className="mt-3">
-              <button className="pill" onClick={() => setAttempt((a) => a + 1)}>
-                Try again
-              </button>
-            </div>
-          </div>
+          </p>
         )}
       </Tile>
     </div>
