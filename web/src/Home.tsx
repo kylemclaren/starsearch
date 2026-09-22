@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { listRecent, type IndexMeta } from "./api"
 import { navigate } from "./router"
 import { UsernameForm } from "./UsernameForm"
-import { Avatar, Tile, ago, compact, langColor } from "./ui"
+import { Avatar, GitHubLink, Tile, ago, langColor } from "./ui"
 
 export function Home() {
   const [recent, setRecent] = useState<IndexMeta[]>()
@@ -13,7 +13,11 @@ export function Home() {
 
   return (
     <div className="min-h-dvh">
-      <section className="relative mx-auto flex max-w-[1280px] flex-col items-center px-4 pb-24 pt-24 text-center sm:pt-36">
+      <header className="mx-auto flex h-16 max-w-[1200px] items-center justify-end px-4 sm:px-6">
+        <GitHubLink />
+      </header>
+
+      <section className="relative mx-auto flex max-w-[1280px] flex-col items-center px-4 pb-20 pt-12 text-center sm:pt-20">
         {total > 0 && (
           <span className="pill fade-in mb-6">
             <span className="tabular-nums text-ink">{total.toLocaleString()}</span> stars indexed
@@ -32,38 +36,41 @@ export function Home() {
       </section>
 
       {recent && recent.length > 0 && (
-        <section className="mx-auto max-w-[1000px] px-4 pb-24 sm:px-6">
-          <h2 className="mb-4 text-center text-[13px] text-mute">Recently indexed</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {recent.map((m) => (
-              <a
-                key={m.login}
-                href={`/${m.login}`}
-                onClick={(e) => {
-                  e.preventDefault()
-                  navigate(`/${m.login}`)
-                }}
-                className="group fade-in"
-              >
-                <Tile inner="flex items-center gap-3 p-4 transition group-hover:bg-tile-2">
-                  <Avatar owner={m.login} size={40} className="rounded-[12px]" />
-                  <div className="min-w-0 flex-1 text-left">
-                    <div className="truncate font-medium">{m.login}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[12.5px] text-mute">
-                      <span className="tabular-nums">{compact(m.count)} stars</span>
-                      <span>·</span>
-                      <span>{ago(m.indexedAt)}</span>
+        <section className="mx-auto max-w-[680px] px-4 pb-24 sm:px-6">
+          <Tile inner="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+              <h2 className="text-[13px] font-medium text-ink">Recently indexed</h2>
+              <span className="text-[12px] text-mute tabular-nums">
+                {recent.length} {recent.length === 1 ? "person" : "people"} · {total.toLocaleString()} stars
+              </span>
+            </div>
+            <ul className="divide-y divide-line">
+              {recent.map((m) => (
+                <li key={m.login} className="fade-in">
+                  <a
+                    href={`/${m.login}`}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      navigate(`/${m.login}`)
+                    }}
+                    className="group flex items-center gap-4 px-5 py-4 transition hover:bg-white/[0.025]"
+                  >
+                    <Avatar owner={m.login} size={40} className="rounded-full" />
+                    <div className="min-w-0 flex-1 text-left">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="truncate text-[15px] font-medium">{m.login}</span>
+                        <span className="shrink-0 text-[12px] text-mute">{ago(m.indexedAt)}</span>
+                      </div>
+                      <LanguageBar meta={m} />
                     </div>
-                  </div>
-                  <div className="flex -space-x-1" title={m.languages.map(([l]) => l).join(", ")}>
-                    {m.languages.map(([l]) => (
-                      <span key={l} className="size-2.5 rounded-full ring-2 ring-tile" style={{ background: langColor(l) }} />
-                    ))}
-                  </div>
-                </Tile>
-              </a>
-            ))}
-          </div>
+                    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0 text-mute transition group-hover:translate-x-0.5 group-hover:text-ink" aria-hidden>
+                      <path d="M6 3.5L10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </Tile>
         </section>
       )}
 
@@ -78,6 +85,32 @@ export function Home() {
         </a>
         .
       </footer>
+    </div>
+  )
+}
+
+/** Share of the top languages across someone's stars, GitHub-style. */
+function LanguageBar({ meta }: { meta: IndexMeta }) {
+  const top = meta.languages.slice(0, 4)
+  const rest = Math.max(0, meta.count - top.reduce((a, [, n]) => a + n, 0))
+  return (
+    <div className="mt-2">
+      <div className="flex h-1.5 gap-[2px] overflow-hidden rounded-full bg-white/5">
+        {top.map(([l, n]) => (
+          <span key={l} style={{ width: `${(n / meta.count) * 100}%`, background: langColor(l) }} />
+        ))}
+        {rest > 0 && <span className="bg-white/10" style={{ width: `${(rest / meta.count) * 100}%` }} />}
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-mute">
+        <span className="text-dim tabular-nums">{meta.count.toLocaleString()} stars</span>
+        {top.slice(0, 3).map(([l, n]) => (
+          <span key={l} className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-full" style={{ background: langColor(l) }} />
+            {l}
+            <span className="tabular-nums opacity-70">{Math.round((n / meta.count) * 100)}%</span>
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

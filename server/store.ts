@@ -123,7 +123,7 @@ export async function listIndexes(limit = 12): Promise<IndexMeta[]> {
       .filter((m): m is IndexMeta => !!m)
       .sort((a, b) => b.indexedAt.localeCompare(a.indexedAt))
       .slice(0, limit)
-      .map((m) => ({ ...m, languages: m.languages.slice(0, 3) }))
+      .map((m) => ({ ...m, languages: m.languages.slice(0, 4) }))
   } catch {
     return []
   }

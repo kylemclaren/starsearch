@@ -4,7 +4,7 @@ import { getMeta, search, type Hit, type IndexMeta } from "./api"
 import { Indexer } from "./Indexer"
 import { Results } from "./Results"
 import { navigate } from "./router"
-import { Avatar, Tile, ago } from "./ui"
+import { Avatar, GitHubLink, Tile, ago } from "./ui"
 
 const SUGGESTIONS = [
   "a terminal UI framework",
@@ -58,14 +58,17 @@ export function UserPage({ login }: { login: string }) {
         >
           ← Search another user
         </a>
-        {meta && !reindex && (
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Avatar owner={login} size={26} className="rounded-full" />
-            <a href={`https://github.com/${login}?tab=stars`} target="_blank" rel="noreferrer" className="truncate text-[14px] font-medium hover:underline">
-              {login}
-            </a>
-          </div>
-        )}
+        <div className="flex min-w-0 items-center gap-4">
+          {meta && !reindex && (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Avatar owner={login} size={26} className="rounded-full" />
+              <a href={`https://github.com/${login}?tab=stars`} target="_blank" rel="noreferrer" className="truncate text-[14px] font-medium hover:underline">
+                {login}
+              </a>
+            </div>
+          )}
+          <GitHubLink />
+        </div>
       </header>
 
       <main className="mx-auto max-w-[1000px] px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
