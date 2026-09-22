@@ -1,0 +1,22 @@
+app = "starsearch"
+primary_region = "iad"
+
+[build]
+
+[env]
+  TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone"
+
+[mounts]
+  source = "starsearch_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-4x"
+  memory = "2gb"

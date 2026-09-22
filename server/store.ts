@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, writeFile, rename } from "node:fs/promises"
 import { DIMS, EMBED_MODEL } from "./embed"
 import type { IndexMeta, Star } from "./types"
 
-const DIR = new URL("../data/users/", import.meta.url).pathname
+const DIR = (process.env.DATA_DIR ?? new URL("../data", import.meta.url).pathname).replace(/\/$/, "") + "/users/"
 
 export interface UserIndex {
   meta: IndexMeta

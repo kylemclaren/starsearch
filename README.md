@@ -1,4 +1,4 @@
-# Stargaze
+# starsearch
 
 Natural-language search over anyone's public GitHub stars.
 

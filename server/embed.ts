@@ -1,6 +1,6 @@
 import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers"
 
-env.cacheDir = new URL("../data/models", import.meta.url).pathname
+env.cacheDir = process.env.MODEL_DIR ?? new URL("../data/models", import.meta.url).pathname
 
 export const EMBED_MODEL = "Xenova/bge-small-en-v1.5"
 export const DIMS = 384

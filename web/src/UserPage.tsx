@@ -39,9 +39,9 @@ export function UserPage({ login }: { login: string }) {
   }, [login])
 
   useEffect(() => {
-    document.title = `${login}’s stars · Stargaze`
+    document.title = `${login}’s stars · starsearch`
     return () => {
-      document.title = "Stargaze"
+      document.title = "starsearch"
     }
   }, [login])
 
