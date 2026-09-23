@@ -34,10 +34,69 @@ export interface JevRanking {
   cached: boolean
 }
 
+/**
+ * TypeSafe sits behind a Cloudflare firewall that 403s any body containing
+ * text that looks like an attack — `' OR 1=1`, `../../etc/passwd`,
+ * `${jndi:…}`. Starred security tools describe themselves with exactly those
+ * strings, so every piece of user text is defanged before it is sent: swap
+ * the trigger characters for look-alikes that mean the same thing to Jev.
+ */
+function defang(text: string): string {
+  return text
+    .replace(/'/g, "\u2019")
+    .replace(/\.\.[\/\\]/g, "..\u2215")
+    .replace(/\$\{/g, "$ {")
+    .replace(/\/etc\//gi, "\u2215etc\u2215")
+}
+
+/** After a firewall block: keep words, drop anything code- or path-like.
+ *  Dots go too, since file names such as win.ini are triggers on their own. */
+function strict(text: string): string {
+  return text
+    .replace(/[^\p{L}\p{N}\s,:!?&+#@()\-]/gu, " ")
+    .replace(/-{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** Final fallback: judge on repo names and topics alone. */
+const bare = () => ""
+
+class FirewallBlocked extends Error {}
+
 const cache = new Map<string, Omit<JevRanking, "cached">>()
 function cacheSet(key: string, v: Omit<JevRanking, "cached">) {
   cache.set(key, v)
   if (cache.size > 2000) cache.delete(cache.keys().next().value!)
+}
+
+async function call(payload: string): Promise<Response_> {
+  let lastError: Error | undefined
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await Bun.sleep(200 * attempt * attempt)
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${API_KEY || "gateway"}`, "Content-Type": "application/json" },
+        body: payload,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+      if (res.ok) return (await res.json()) as Response_
+      const text = await res.text()
+      // A JSON 403 is a key problem; an HTML one is the firewall.
+      if (res.status === 403 && text.trimStart().startsWith("<")) throw new FirewallBlocked("TypeSafe's firewall blocked the request")
+      let detail = text.slice(0, 160)
+      try {
+        detail = JSON.parse(text).detail?.message ?? detail
+      } catch {}
+      lastError = new Error(`TypeSafe responded ${res.status}: ${detail}`)
+      if (res.status === 401 || res.status === 403 || res.status === 422) break
+    } catch (err) {
+      if (err instanceof FirewallBlocked) throw err
+      lastError = err as Error
+    }
+  }
+  throw lastError ?? new Error("TypeSafe call failed")
 }
 
 export async function judge(login: string, indexedAt: string, query: string, cands: Hit[], scope = ""): Promise<JevRanking> {
@@ -47,56 +106,50 @@ export async function judge(login: string, indexedAt: string, query: string, can
   const started = performance.now()
   if (cands.length === 0) return { hits: [], demoted: [], model: MODEL, judged: 0, inputTokens: 0, answerable: 0, tookMs: 0, cached: false }
 
-  const state = {
-    query,
-    context: `These are GitHub repositories that ${login} has starred. The query is what ${login} (or someone browsing their stars) typed to find one.`,
-    candidates: cands.map((h, i) => ({
-      id: `c${i + 1}`,
-      repo: h.id,
-      description: h.description.slice(0, 280),
-      topics: h.topics.slice(0, 8),
-      language: h.language,
-    })),
-  }
-  const questions: Record<string, unknown> = {}
-  const options: Record<string, string> = {}
-  cands.forEach((h, i) => {
-    const id = `c${i + 1}`
-    options[id] = `${h.id}${h.description ? ` — ${h.description.slice(0, 140)}` : ""}`
-    questions[id] = {
-      type: "noul",
-      instructions: `Is candidate ${id} (${h.id}) a repository the searcher is looking for with this query?`,
-      criteria: {
-        true: "The repository is what the query describes: its purpose, kind of tool, domain or ecosystem matches",
-        false: "The repository is about something else, or only shares a word or two with the query",
-      },
+  const build = (clean: (t: string) => string, cleanQuery = clean) => {
+    const state = {
+      query: cleanQuery(query),
+      context: `These are GitHub repositories that ${login} has starred. The query is what ${login} (or someone browsing their stars) typed to find one.`,
+      candidates: cands.map((h, i) => ({
+        id: `c${i + 1}`,
+        repo: h.id,
+        ...(clean === bare ? {} : { description: clean(h.description.slice(0, 280)) }),
+        topics: h.topics.slice(0, 8),
+        language: h.language,
+      })),
     }
-  })
-  questions.best = { type: "choice", instructions: "Which candidate repository best matches the search query?", criteria: options }
-  questions.answerable = { type: "noul", instructions: "Does at least one candidate repository match what the search query describes?" }
-
-  const payload = JSON.stringify({ state, model: MODEL, questions })
-  let body: Response_ | undefined
-  let lastError: Error | undefined
-  for (let attempt = 0; attempt < 3 && !body; attempt++) {
-    if (attempt > 0) await Bun.sleep(200 * attempt * attempt)
-    try {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${API_KEY || "gateway"}`, "Content-Type": "application/json" },
-        body: payload,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      })
-      if (res.ok) body = (await res.json()) as Response_
-      else {
-        lastError = new Error(`TypeSafe responded ${res.status} ${(await res.text()).slice(0, 200)}`)
-        if (res.status === 401 || res.status === 422) break
+    const questions: Record<string, unknown> = {}
+    const options: Record<string, string> = {}
+    cands.forEach((h, i) => {
+      const id = `c${i + 1}`
+      const desc = clean(h.description.slice(0, 140))
+      options[id] = `${h.id}${desc ? ` — ${desc}` : ""}`
+      questions[id] = {
+        type: "noul",
+        instructions: `Is candidate ${id} (${h.id}) a repository the searcher is looking for with this query?`,
+        criteria: {
+          true: "The repository is what the query describes: its purpose, kind of tool, domain or ecosystem matches",
+          false: "The repository is about something else, or only shares a word or two with the query",
+        },
       }
+    })
+    questions.best = { type: "choice", instructions: "Which candidate repository best matches the search query?", criteria: options }
+    questions.answerable = { type: "noul", instructions: "Does at least one candidate repository match what the search query describes?" }
+    return JSON.stringify({ state, model: MODEL, questions })
+  }
+
+  let body: Response_ | undefined
+  for (const [name, clean] of [["defanged", defang], ["strict", strict], ["names only", bare]] as const) {
+    try {
+      // The query is the searcher's own words, so it always keeps at least strict cleaning.
+      body = await call(clean === bare ? build(bare, strict) : build(clean))
+      break
     } catch (err) {
-      lastError = err as Error
+      if (!(err instanceof FirewallBlocked) || clean === bare) throw err
+      console.warn(`jev: firewall blocked the ${name} request for ${login} "${query}"`)
     }
   }
-  if (!body) throw lastError ?? new Error("TypeSafe call failed")
+  if (!body) throw new Error("TypeSafe call failed")
 
   const best = body.answers.best?.probabilities ?? {}
   const ranked = cands.map((h, i) => ({ ...h, relevance: body.answers[`c${i + 1}`]?.noul ?? 0, probability: best[`c${i + 1}`] ?? 0 }))

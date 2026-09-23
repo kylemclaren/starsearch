@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { BorderBeam } from "border-beam"
 import { getMeta, search, type Hit, type IndexMeta } from "./api"
+import { toast } from "./components/ui/toast"
 import { Indexer } from "./Indexer"
 import { Results } from "./Results"
 import { navigate } from "./router"
@@ -24,7 +25,6 @@ interface State {
   phase: "idle" | "retrieving" | "judging" | "done"
   hybridMs?: number
   jev?: { tookMs: number; judged: number; inputTokens: number; cached: boolean; answerable: number }
-  error?: string
 }
 
 const EMPTY: State = { query: "", hits: [], demoted: [], phase: "idle" }
@@ -99,37 +99,62 @@ function Search({ login, meta, onReindex }: { login: string; meta: IndexMeta; on
   const [lang, setLang] = useState<string | undefined>(params.get("lang") ?? undefined)
   const [state, setState] = useState<State>(EMPTY)
   const ac = useRef<AbortController>(undefined)
+  const lastQuery = useRef("")
+  const errorToast = useRef<string>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function run(q: string, language = lang) {
     q = q.trim()
+    lastQuery.current = q
     ac.current?.abort()
+    if (errorToast.current) toast.close(errorToast.current)
     const qs = new URLSearchParams()
     if (q) qs.set("q", q)
     if (language) qs.set("lang", language)
     history.replaceState({}, "", `/${login}${qs.size ? `?${qs}` : ""}`)
     if (!q) return setState(EMPTY)
     const ctl = (ac.current = new AbortController())
-    setState((s) => ({ ...s, query: q, phase: "retrieving", error: undefined, jev: undefined }))
+    setState((s) => ({ ...s, query: q, phase: "retrieving", jev: undefined }))
+    const failed = (type: "warning" | "error", title: string, description: string) => {
+      const id = (errorToast.current = toast.add({
+        type,
+        title,
+        description,
+        timeout: 8000,
+        actionProps: {
+          children: "Retry",
+          onClick() {
+            toast.close(id)
+            run(q, language)
+          },
+        },
+      }))
+    }
     try {
       for await (const e of search(login, q, language, ctl.signal)) {
         if (ctl.signal.aborted) return
         if (e.type === "hybrid") setState({ query: q, hits: e.hits, demoted: [], phase: "judging", hybridMs: e.tookMs })
         else if (e.type === "jev")
           setState((s) => ({ ...s, hits: e.hits, demoted: e.demoted, phase: "done", jev: { tookMs: e.tookMs, judged: e.judged, inputTokens: e.inputTokens, cached: e.cached, answerable: e.answerable } }))
-        else if (e.type === "error") setState((s) => ({ ...s, phase: "done", error: `Jev re-ranking failed, so this is hybrid order. ${e.message}` }))
+        else if (e.type === "error") {
+          setState((s) => ({ ...s, phase: "done" }))
+          failed("warning", "Jev couldn’t re-rank this search", `Showing keyword and semantic order instead. ${e.message}`)
+        }
       }
     } catch (err) {
-      if (!ctl.signal.aborted) setState((s) => ({ ...s, phase: "done", error: (err as Error).message }))
+      if (ctl.signal.aborted) return
+      setState((s) => ({ ...s, phase: "done" }))
+      failed("error", "Search failed", (err as Error).message)
     }
   }
 
   // Natural-language queries read best when you finish the thought, so wait for a pause.
   useEffect(() => {
     const q = input.trim()
-    if (q === state.query) return
+    if (q === lastQuery.current) return
     if (q.length > 0 && q.length < 3) return
-    const t = setTimeout(() => run(q), 550)
+    // Re-check when the timer fires: the on-load search may have run meanwhile.
+    const t = setTimeout(() => q !== lastQuery.current && run(q), 550)
     return () => clearTimeout(t)
   }, [input])
 
@@ -269,6 +294,8 @@ function Search({ login, meta, onReindex }: { login: string; meta: IndexMeta; on
                       <span className="text-dim">{state.hits.length}</span> matches, re-ranked by Jev
                     </>
                   )
+                ) : state.phase === "done" ? (
+                  <>Keyword and semantic order · Jev unavailable</>
                 ) : (
                   <>Hybrid candidates · waiting on Jev</>
                 )}
@@ -291,7 +318,6 @@ function Search({ login, meta, onReindex }: { login: string; meta: IndexMeta; on
                 )}
               </span>
             </div>
-            {state.error && <div className="border-b border-line bg-amber-500/5 px-5 py-2.5 text-[12.5px] text-amber-200/80">{state.error}</div>}
             {state.hits.length === 0 ? (
               <p className="px-5 py-10 text-center text-[14px] text-mute">Nothing in {login}’s stars matches that.</p>
             ) : (

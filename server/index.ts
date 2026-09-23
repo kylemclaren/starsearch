@@ -70,15 +70,26 @@ const inflight = new Set<string>()
 
 function ndjson(run: (send: (e: object) => void) => Promise<void>): Response {
   const enc = new TextEncoder()
+  // The browser aborts a search as soon as the query changes, so writes after
+  // that point must be dropped instead of throwing.
+  let closed = false
   const stream = new ReadableStream<Uint8Array>({
     async start(c) {
-      const send = (e: object) => c.enqueue(enc.encode(JSON.stringify(e) + "\n"))
+      const send = (e: object) => {
+        if (!closed) c.enqueue(enc.encode(JSON.stringify(e) + "\n"))
+      }
       try {
         await run(send)
       } catch (err) {
         send({ type: "error", message: (err as Error).message })
       }
-      c.close()
+      if (!closed) {
+        closed = true
+        c.close()
+      }
+    },
+    cancel() {
+      closed = true
     },
   })
   return new Response(stream, { headers: { ...noStore, "Content-Type": "application/x-ndjson; charset=utf-8", "X-Accel-Buffering": "no" } })
@@ -134,6 +145,7 @@ async function search(login: string, url: URL): Promise<Response> {
       const r = await judge(login, idx.meta.indexedAt, query, hits, language)
       send({ type: "jev", query, ...r })
     } catch (err) {
+      console.error(`jev failed for ${login} "${query}":`, (err as Error).message)
       send({ type: "error", query, message: (err as Error).message })
     }
   })
